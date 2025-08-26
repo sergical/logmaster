@@ -97,7 +97,7 @@ class GameManager {
       Sentry.logger.debug("Game manager initialized successfully", {
         playerId,
         gameStateSize: JSON.stringify(this.gameState).length,
-        memoryUsage: (performance as any)?.memory?.usedJSHeapSize || 'unknown'
+        memoryUsage: (performance as { memory?: { usedJSHeapSize?: number } })?.memory?.usedJSHeapSize || 'unknown'
       });
 
     } catch (error) {
@@ -249,6 +249,7 @@ class GameManager {
   }
 
   chopLog(logId: string, reactionTime?: number): { success: boolean; points: number; comboMultiplier: number } {
+    // eslint-disable-next-line prefer-const
     let result = { success: false, points: 0, comboMultiplier: 1 };
 
     if (!this.gameState) return result;
@@ -488,7 +489,7 @@ class GameManager {
 
     const beforeCount = this.gameState.logs.length;
     this.gameState.logs = this.gameState.logs.filter(log => 
-      !log.chopped || (Date.now() - (log as any).choppedAt) < 5000
+      !log.chopped || (Date.now() - (log as { choppedAt?: number }).choppedAt || 0) < 5000
     );
     const afterCount = this.gameState.logs.length;
 

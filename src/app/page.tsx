@@ -1,226 +1,165 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import * as Sentry from "@sentry/nextjs";
-import GameCanvas from '@/components/GameCanvas';
-import Leaderboard from '@/components/Leaderboard';
-import Achievements from '@/components/Achievements';
-import { gameManager, GameState } from '@/lib/game-manager';
-import {shortUUID} from '@/lib/utils';
+import RetroGameCanvas from '@/components/RetroGameCanvas';
+import RetroLeaderboard from '@/components/RetroLeaderboard';
+import RetroAchievements from '@/components/RetroAchievements';
+import { useConvexGame } from '@/lib/use-convex-game';
+import { shortUUID } from '@/lib/utils';
 
 export default function Home() {
   const [playerId] = useState(() => `player_${shortUUID()}`);
-  const [playerName, setPlayerName] = useState('');
   const [currentTab, setCurrentTab] = useState<'game' | 'leaderboard' | 'achievements'>('game');
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [hasStarted, setHasStarted] = useState(false);
 
+  
+  const { player, createOrUpdatePlayer } = useConvexGame(playerId);
+  const [playerName, setPlayerName] = useState('');
+  
   useEffect(() => {
-    Sentry.logger.info("LogMaster application started", { playerId });
-    
-    const initializeGame = async () => {
-      try {
-        await gameManager.initialize(playerId);
-        const state = gameManager.getGameState();
-        setGameState(state);
-        setPlayerName(state?.playerName || '');
-        
-        Sentry.logger.info("Game state loaded successfully", { 
-          playerId,
-          playerName: state?.playerName,
-          currentScore: state?.score || 0
-        });
-      } catch (error) {
-        Sentry.captureException(error, {
-          tags: {
-            playerId
-          }
-        });
-      }
-    };
-
-    initializeGame();
+    Sentry.logger.info("Retro LogMaster initialized", { playerId });
   }, [playerId]);
-
-  const updatePlayerName = () => {
-    if (playerName.trim()) {
-      gameManager.updateGameState((state) => {
-        state.playerName = playerName.trim();
-      });
-      const newState = gameManager.getGameState();
-      setGameState(newState);
-      
-      Sentry.logger.info("Player name updated", { 
-        playerId,
-        newPlayerName: playerName.trim()
-      });
+  
+  useEffect(() => {
+    if (player && player.name !== playerName) {
+      setPlayerName(player.name);
     }
-  };
-
-  const startNewGame = () => {
-    setHasStarted(true);
-    setCurrentTab('game');
-    
-    Sentry.logger.info("New game session started", {
-      playerId,
-      playerName: gameState?.playerName
-    });
-  };
-
-  if (!gameState) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-green-100 to-green-200 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin text-6xl mb-4">🌲</div>
-          <h1 className="text-2xl font-bold text-green-800 mb-2">Loading LogMaster...</h1>
-          <p className="text-green-600">Preparing your lumberjack adventure!</p>
-        </div>
-      </div>
-    );
-  }
-
+  }, [player, playerName]);
+  
+  const handleUpdateName = useCallback(async () => {
+    if (playerName.trim()) {
+      await createOrUpdatePlayer({ userId: playerId, name: playerName.trim() });
+      Sentry.logger.info("Player name updated", { playerId, newName: playerName.trim() });
+    }
+  }, [playerName, createOrUpdatePlayer, playerId]);
+  
+  const tabButtons = useMemo(() => [
+    { id: 'game' as const, label: 'GAME', icon: '🎮' },
+    { id: 'leaderboard' as const, label: 'SCORES', icon: '🏆' },
+    { id: 'achievements' as const, label: 'AWARDS', icon: '🏅' },
+  ], []);
+  
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-100 to-green-200">
-      <div className="container mx-auto px-4 py-8">
-        <header className="text-center mb-8">
-          <div className="flex items-center justify-center gap-4 mb-4">
-            <div className="text-6xl">🪓</div>
-            <div>
-              <h1 className="text-5xl font-bold text-green-800 mb-2">LogMaster</h1>
-              <p className="text-lg text-green-600">The Ultimate Wood Chopping Experience</p>
+    <div className="min-h-screen bg-black text-white">
+      {/* CRT Monitor Effect */}
+      <div className="min-h-screen bg-gradient-to-b from-green-950 via-green-900 to-black crt-effect">
+        <div className="container mx-auto px-4 py-8 max-w-6xl">
+          {/* Header */}
+          <header className="text-center mb-8">
+            <h1 className="text-6xl md:text-8xl font-bold text-yellow-400 mb-4 pixel-font retro-glow animate-pulse">
+              LOGMASTER
+            </h1>
+            <div className="text-green-400 text-xl mb-6 pixel-font">
+              ARCADE EDITION
             </div>
-            <div className="text-6xl">🌲</div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4 inline-block shadow-lg">
-            <div className="flex items-center gap-4">
-              <div className="text-2xl">👤</div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Lumberjack Name:
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
-                    className="border border-gray-300 rounded px-3 py-1 text-sm"
-                    placeholder="Enter your name"
-                    maxLength={20}
-                  />
-                  <button
-                    onClick={updatePlayerName}
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
-                  >
-                    Update
-                  </button>
+            
+            {/* Player Info */}
+            <div className="inline-block bg-black/50 p-4 rounded-lg border-2 border-green-600 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="text-3xl">👤</div>
+                <div className="text-left">
+                  <label className="block text-xs text-green-400 mb-1 pixel-font">
+                    ENTER NAME:
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={playerName}
+                      onChange={(e) => setPlayerName(e.target.value)}
+                      className="bg-black border-2 border-green-600 text-green-400 px-3 py-1 rounded font-mono text-sm"
+                      placeholder="PLAYER1"
+                      maxLength={10}
+                      style={{ textTransform: 'uppercase' }}
+                    />
+                    <button
+                      onClick={handleUpdateName}
+                      className="bg-green-600 hover:bg-green-500 px-3 py-1 rounded text-xs font-bold border-2 border-green-400"
+                    >
+                      OK
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <nav className="flex justify-center mb-8">
-          <div className="bg-white rounded-lg shadow-lg p-2 flex gap-2">
-            <button
-              onClick={() => setCurrentTab('game')}
-              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
-                currentTab === 'game'
-                  ? 'bg-green-600 text-white shadow-md'
-                  : 'text-green-600 hover:bg-green-50'
-              }`}
-            >
-              🎮 Game
-            </button>
-            <button
-              onClick={() => setCurrentTab('leaderboard')}
-              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
-                currentTab === 'leaderboard'
-                  ? 'bg-green-600 text-white shadow-md'
-                  : 'text-green-600 hover:bg-green-50'
-              }`}
-            >
-              🏆 Leaderboard
-            </button>
-            <button
-              onClick={() => setCurrentTab('achievements')}
-              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
-                currentTab === 'achievements'
-                  ? 'bg-green-600 text-white shadow-md'
-                  : 'text-green-600 hover:bg-green-50'
-              }`}
-            >
-              🏅 Achievements
-            </button>
-          </div>
-        </nav>
-
-        <main className="max-w-6xl mx-auto">
-          {currentTab === 'game' && (
-            <div>
-              {!hasStarted ? (
-                <div className="text-center bg-white rounded-lg shadow-lg p-12">
-                  <div className="text-8xl mb-6">🪵</div>
-                  <h2 className="text-3xl font-bold text-green-800 mb-4">
-                    Welcome to LogMaster!
-                  </h2>
-                  <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
-                    Test your lumberjack skills in this fast-paced wood chopping game! Click on logs to chop them, 
-                    build combos for bonus points, and unlock achievements as you become the ultimate LogMaster.
-                  </p>
-                  <div className="grid md:grid-cols-3 gap-6 mb-8 text-left max-w-3xl mx-auto">
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <div className="text-3xl mb-2">🎯</div>
-                      <h3 className="font-bold text-green-700 mb-2">How to Play</h3>
-                      <p className="text-sm text-green-600">
-                        Click on logs to chop them. Different log types give different points!
-                      </p>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <div className="text-3xl mb-2">🔥</div>
-                      <h3 className="font-bold text-blue-700 mb-2">Build Combos</h3>
-                      <p className="text-sm text-blue-600">
-                        Chop logs consecutively to build combos and multiply your score!
-                      </p>
-                    </div>
-                    <div className="bg-purple-50 p-4 rounded-lg">
-                      <div className="text-3xl mb-2">🏆</div>
-                      <h3 className="font-bold text-purple-700 mb-2">Unlock Achievements</h3>
-                      <p className="text-sm text-purple-600">
-                        Complete challenges to unlock special achievements and bragging rights!
-                      </p>
+                {player && (
+                  <div className="text-left border-l-2 border-green-600 pl-4">
+                    <div className="text-xs text-green-400">HIGH SCORE</div>
+                    <div className="text-2xl font-bold text-yellow-400">
+                      {player.highScore.toLocaleString()}
                     </div>
                   </div>
-                  <button
-                    onClick={startNewGame}
-                    className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg text-xl font-bold transition-colors"
-                  >
-                    Start Chopping! 🪓
-                  </button>
-                </div>
-              ) : (
-                <GameCanvas playerId={playerId} />
-              )}
+                )}
+              </div>
             </div>
-          )}
-
-          {currentTab === 'leaderboard' && (
-            <Leaderboard 
-              currentPlayerScore={gameState.score}
-              currentPlayerId={playerId}
-            />
-          )}
-
-          {currentTab === 'achievements' && (
-            <Achievements achievements={gameState.achievements || []} />
-          )}
-        </main>
-
-        <footer className="text-center mt-12 text-green-700">
-          <p className="text-sm">
-            🌲 Next.js + Convex + Sentry 🚀
-          </p>
-        </footer>
+          </header>
+          
+          {/* Tab Navigation */}
+          <nav className="flex justify-center mb-8">
+            <div className="bg-black/50 p-2 rounded-lg border-2 border-purple-600 flex gap-2">
+              {tabButtons.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setCurrentTab(tab.id)}
+                  className={`px-6 py-3 rounded-lg font-bold transition-all text-sm ${
+                    currentTab === tab.id
+                      ? 'arcade-button text-white'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border-2 border-gray-600'
+                  }`}
+                >
+                  <span className="text-xl mr-2">{tab.icon}</span>
+                  <span className="pixel-font">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+          
+          {/* Main Content */}
+          <main>
+            {currentTab === 'game' && (
+              <div className="max-w-4xl mx-auto">
+                {player ? (
+                  <RetroGameCanvas 
+                    playerId={playerId}
+                    onGameOver={(score) => {
+                      Sentry.logger.info("Game over", { playerId, finalScore: score });
+                    }}
+                  />
+                ) : (
+                  <div className="text-center py-16">
+                    <div className="text-6xl mb-4 animate-spin">🪓</div>
+                    <div className="text-xl pixel-font text-green-400">
+                      LOADING...
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {currentTab === 'leaderboard' && (
+              <div className="max-w-2xl mx-auto">
+                <RetroLeaderboard 
+                  currentPlayerId={player?._id}
+                />
+              </div>
+            )}
+            
+            {currentTab === 'achievements' && (
+              <div className="max-w-4xl mx-auto">
+                <RetroAchievements 
+                  unlockedAchievements={player?.achievements || []}
+                />
+              </div>
+            )}
+          </main>
+          
+          {/* Footer */}
+          <footer className="text-center mt-12 text-green-600 text-xs pixel-font">
+            <div className="mb-2">
+              🌲 NEXT.JS + CONVEX + PHASER + SENTRY 🚀
+            </div>
+            <div className="text-green-700">
+              © 2024 LOGMASTER ARCADE - INSERT COIN TO CONTINUE
+            </div>
+          </footer>
+        </div>
       </div>
     </div>
   );

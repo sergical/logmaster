@@ -13,6 +13,10 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as achievements from "../achievements.js";
+import type * as gameSessions from "../gameSessions.js";
+import type * as leaderboard from "../leaderboard.js";
+import type * as players from "../players.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -22,7 +26,12 @@ import type {
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  achievements: typeof achievements;
+  gameSessions: typeof gameSessions;
+  leaderboard: typeof leaderboard;
+  players: typeof players;
+}>;
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">

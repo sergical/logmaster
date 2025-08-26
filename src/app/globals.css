@@ -157,3 +157,70 @@ body {
     transform: translateY(-60px) scale(0.8);
   }
 }
+
+/* Retro pixel font */
+.pixel-font {
+  font-family: var(--font-press-start), monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
+}
+
+/* Retro CRT effect */
+.crt-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.crt-effect::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15),
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+}
+
+/* Retro glow effect */
+.retro-glow {
+  text-shadow: 
+    0 0 10px currentColor,
+    0 0 20px currentColor,
+    0 0 30px currentColor;
+}
+
+/* Pixelated rendering */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Arcade button style */
+.arcade-button {
+  background: linear-gradient(180deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  border: 3px solid #15803d;
+  box-shadow: 
+    0 4px 0 #15803d,
+    0 8px 0 rgba(0, 0, 0, 0.3),
+    0 8px 10px rgba(0, 0, 0, 0.5);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+  transform: translateY(-2px);
+  transition: all 0.1s;
+}
+
+.arcade-button:active {
+  transform: translateY(2px);
+  box-shadow: 
+    0 2px 0 #15803d,
+    0 4px 0 rgba(0, 0, 0, 0.3),
+    0 4px 5px rgba(0, 0, 0, 0.5);
+}
