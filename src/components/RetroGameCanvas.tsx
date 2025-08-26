@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useConvexGame } from '@/lib/use-convex-game';
+import * as Sentry from "@sentry/nextjs";
 
 interface RetroGameCanvasProps {
   playerId: string;
@@ -22,7 +23,7 @@ const loadPhaser = async () => {
   return phaser;
 };
 
-export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
+export default function RetroGameCanvas({ playerId, onGameOver }: RetroGameCanvasProps) {
   const gameRef = useRef<PhaserGame | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -30,8 +31,10 @@ export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
   const [phaserLoaded, setPhaserLoaded] = useState(false);
   const [gameError, setGameError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [currentScore, setCurrentScore] = useState(0);
+  const [currentCombo, setCurrentCombo] = useState(0);
   
-  const { startGame } = useConvexGame(playerId);
+  const { startGame, endGame } = useConvexGame(playerId);
   
   // Load Phaser dynamically
   useEffect(() => {
@@ -101,73 +104,418 @@ export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
         
         console.log('Container dimensions:', containerWidth, 'x', containerHeight);
         
-        // Create a minimal working scene
+        // LogMaster Game Scene
         const GameScene = class extends Phaser.Scene {
+          private score = 0;
+          private combo = 0;
+          private level = 1;
+          private gameTime = 0;
+          private logs: Phaser.GameObjects.Rectangle[] = [];
+          private scoreText!: Phaser.GameObjects.Text;
+          private comboText!: Phaser.GameObjects.Text;
+          private levelText!: Phaser.GameObjects.Text;
+          private timeText!: Phaser.GameObjects.Text;
+          private logSpawnTimer = 0;
+          private logSpawnRate = 2000; // milliseconds
+          private axeCursor!: Phaser.GameObjects.Graphics;
+          private gameStartTime = 0;
+          
           constructor() {
             super({ key: 'GameScene' });
           }
           
           create() {
-            console.log('GameScene create() called!');
+            console.log('LogMaster GameScene create() called!');
             
             // Set background color
-            this.cameras.main.setBackgroundColor('#2d5016');
+            this.cameras.main.setBackgroundColor('#1a3d0a');
             
-            // Get the center of the game world
-            const centerX = this.cameras.main.width / 2;
-            const centerY = this.cameras.main.height / 2;
+            // Create UI elements
+            this.scoreText = this.add.text(20, 20, 'SCORE: 0', {
+              fontSize: '24px',
+              color: '#ffff00',
+              fontFamily: 'monospace'
+            });
             
-            // Add a simple text at center
-            const text = this.add.text(centerX, centerY - 50, 'LOGMASTER GAME', {
-              fontSize: '32px',
-              color: '#ffffff',
-              fontFamily: 'Arial'
-            }).setOrigin(0.5);
+            this.comboText = this.add.text(20, 50, 'COMBO: 0', {
+              fontSize: '18px',
+              color: '#ff8800',
+              fontFamily: 'monospace'
+            });
             
-            // Add a colored rectangle using graphics
-            const graphics = this.add.graphics();
-            graphics.fillStyle(0x8B4513);
-            graphics.fillRect(centerX - 50, centerY + 50, 100, 100);
+            this.levelText = this.add.text(20, 80, 'LEVEL: 1', {
+              fontSize: '18px',
+              color: '#00ff00',
+              fontFamily: 'monospace'
+            });
             
-            // Add another colored rectangle using graphics
-            const redGraphics = this.add.graphics();
-            redGraphics.fillStyle(0xFF0000);
-            redGraphics.fillRect(centerX + 50, centerY + 50, 64, 64);
+            this.timeText = this.add.text(20, 110, 'TIME: 0:00', {
+              fontSize: '18px',
+              color: '#00ffff',
+              fontFamily: 'monospace'
+            });
             
-            // Make the entire scene interactive
+            this.gameStartTime = this.time.now;
+            
+            // Create custom axe cursor
+            this.axeCursor = this.add.graphics();
+            this.drawAxe();
+            
+            // Hide default cursor and track mouse
+            this.input.setDefaultCursor('none');
+            
+            this.input.on('pointermove', (pointer: any) => {
+              this.axeCursor.x = pointer.x;
+              this.axeCursor.y = pointer.y;
+            });
+            
+            // Handle clicks for chopping
             this.input.on('pointerdown', (pointer: any) => {
-              console.log('Scene clicked at:', pointer.x, pointer.y);
-              
-              // Change red rectangle to green when clicked
-              redGraphics.clear();
-              redGraphics.fillStyle(0x00FF00);
-              redGraphics.fillRect(centerX + 50, centerY + 50, 64, 64);
-              
-              // Reset after 1 second
-              this.time.delayedCall(1000, () => {
-                redGraphics.clear();
-                redGraphics.fillStyle(0xFF0000);
-                redGraphics.fillRect(centerX + 50, centerY + 50, 64, 64);
-              });
+              this.chopAtPosition(pointer.x, pointer.y);
             });
             
-            // Add a simple animation to make it more visible
-            this.tweens.add({
-              targets: text,
-              y: centerY - 30,
-              duration: 2000,
-              yoyo: true,
-              repeat: -1,
-              ease: 'Sine.easeInOut'
-            });
-            
-            console.log('GameScene create() completed!');
+            console.log('LogMaster GameScene create() completed!');
           }
           
-          update() {
-            // This runs every frame - keeping minimal logging
-            if (this.time.now % 5000 < 16) { // Log every ~5 seconds
-              console.log('Game update running, time:', this.time.now);
+          drawAxe() {
+            this.axeCursor.clear();
+            // Draw simple pixel axe
+            this.axeCursor.fillStyle(0x8B4513); // Brown handle
+            this.axeCursor.fillRect(-2, -10, 4, 20);
+            this.axeCursor.fillStyle(0xC0C0C0); // Silver blade
+            this.axeCursor.fillRect(-8, -8, 16, 6);
+          }
+          
+          spawnLog() {
+            const x = Phaser.Math.Between(50, this.cameras.main.width - 50);
+            const y = -50;
+            
+            // Determine log type based on level and random chance
+            let logType = 'normal';
+            let color = 0x8B4513; // Brown
+            let width = 60;
+            let height = 40;
+            let hits = 2;
+            let points = 50;
+            
+            const rand = Math.random();
+            if (rand < 0.02) { // 2% chance for error log
+              logType = 'error';
+              color = 0xFF0000; // Red
+              width = 80;
+              height = 50;
+              hits = 1;
+              points = -100; // Negative points!
+            } else if (rand < 0.07) { // 5% chance for golden log
+              logType = 'golden';
+              color = 0xFFD700;
+              hits = 1;
+              points = 500;
+            } else if (rand < 0.25 + (this.level * 0.05)) { // Increasing chance for hardwood
+              logType = 'hardwood';
+              color = 0x654321;
+              width = 70;
+              height = 45;
+              hits = 3;
+              points = 100;
+            }
+            
+            const log = this.add.rectangle(x, y, width, height, color) as any;
+            log.setStrokeStyle(2, 0x000000);
+            log.logType = logType;
+            log.hitsRemaining = hits;
+            log.points = points;
+            log.fallSpeed = Phaser.Math.Between(100, 150 + (this.level * 10));
+            
+            // Add error symbol for error logs
+            if (logType === 'error') {
+              const errorText = this.add.text(log.x, log.y, '⚠️', {
+                fontSize: '20px',
+                color: '#ffffff'
+              }).setOrigin(0.5);
+              log.errorSymbol = errorText;
+            }
+            
+            // Sentry logging for log spawning
+            Sentry.addBreadcrumb({
+              message: 'Log spawned',
+              category: 'game',
+              data: {
+                logType,
+                level: this.level,
+                position: { x, y },
+                points,
+                hits
+              },
+              level: 'info'
+            });
+            
+            this.logs.push(log);
+          }
+          
+          chopAtPosition(x: number, y: number) {
+            let hitSomething = false;
+            
+            // Sentry logging for chop attempt
+            Sentry.addBreadcrumb({
+              message: 'Chop attempted',
+              category: 'game',
+              data: {
+                position: { x, y },
+                currentCombo: this.combo,
+                level: this.level,
+                logsOnScreen: this.logs.length
+              },
+              level: 'info'
+            });
+            
+            // Check for log hits
+            for (let i = this.logs.length - 1; i >= 0; i--) {
+              const log = this.logs[i] as any;
+              const bounds = log.getBounds();
+              
+              if (Phaser.Geom.Rectangle.Contains(bounds, x, y)) {
+                log.hitsRemaining--;
+                hitSomething = true;
+                
+                // Handle error logs - they throw actual errors!
+                if (log.logType === 'error') {
+                  // Create structured error for Sentry
+                  const errorLogError = new Error('Player chopped an error log!');
+                  errorLogError.name = 'ErrorLogChoppedError';
+                  
+                  Sentry.captureException(errorLogError, {
+                    tags: {
+                      gameEvent: 'error_log_chopped',
+                      logType: 'error'
+                    },
+                    extra: {
+                      playerScore: this.score,
+                      playerCombo: this.combo,
+                      gameLevel: this.level,
+                      logPosition: { x: log.x, y: log.y },
+                      gameTime: this.time.now - this.gameStartTime
+                    },
+                    level: 'warning'
+                  });
+                  
+                  console.error('🚨 ERROR LOG CHOPPED! This generates a Sentry error for demo purposes');
+                }
+                
+                // Visual feedback - flash the log
+                this.tweens.add({
+                  targets: log,
+                  alpha: 0.5,
+                  duration: 100,
+                  yoyo: true,
+                  ease: 'Power2'
+                });
+                
+                if (log.hitsRemaining <= 0) {
+                  // Log destroyed
+                  const previousCombo = this.combo;
+                  
+                  if (log.logType === 'error') {
+                    // Error logs break combo and subtract points
+                    this.combo = 0;
+                    this.score = Math.max(0, this.score + log.points); // Negative points
+                  } else {
+                    this.combo++;
+                    const multiplier = Math.max(1, Math.floor(this.combo / 5) + 1);
+                    this.score += log.points * multiplier;
+                  }
+                  
+                  // Sentry logging for successful chop
+                  Sentry.addBreadcrumb({
+                    message: 'Log destroyed',
+                    category: 'game',
+                    data: {
+                      logType: log.logType,
+                      points: log.points,
+                      newScore: this.score,
+                      comboChange: this.combo - previousCombo,
+                      multiplier: log.logType !== 'error' ? Math.max(1, Math.floor(this.combo / 5) + 1) : 0
+                    },
+                    level: log.logType === 'error' ? 'warning' : 'info'
+                  });
+                  
+                  // Update React state
+                  setCurrentScore(this.score);
+                  setCurrentCombo(this.combo);
+                  
+                  // Clean up error symbol if it exists
+                  if (log.errorSymbol) {
+                    log.errorSymbol.destroy();
+                  }
+                  
+                  // Remove log
+                  log.destroy();
+                  this.logs.splice(i, 1);
+                  
+                  // Particle effect
+                  this.createChopEffect(log.x, log.y, log.logType);
+                } else {
+                  // Log damaged but not destroyed
+                  log.setFillStyle(log.fillColor, 0.8);
+                  
+                  Sentry.addBreadcrumb({
+                    message: 'Log damaged',
+                    category: 'game',
+                    data: {
+                      logType: log.logType,
+                      hitsRemaining: log.hitsRemaining,
+                      position: { x: log.x, y: log.y }
+                    },
+                    level: 'info'
+                  });
+                }
+                
+                break; // Only hit one log per click
+              }
+            }
+            
+            // Miss penalty
+            if (!hitSomething) {
+              const previousCombo = this.combo;
+              this.combo = 0;
+              setCurrentCombo(0);
+              
+              // Sentry logging for miss
+              Sentry.addBreadcrumb({
+                message: 'Player missed',
+                category: 'game',
+                data: {
+                  lostCombo: previousCombo,
+                  clickPosition: { x, y },
+                  logsOnScreen: this.logs.length
+                },
+                level: 'info'
+              });
+            }
+            
+            // Update UI
+            this.updateUI();
+          }
+          
+          createChopEffect(x: number, y: number, logType: string = 'normal') {
+            // Different colors based on log type
+            let particleColor = 0xffaa00; // Default orange
+            let particleCount = 5;
+            
+            switch (logType) {
+              case 'golden':
+                particleColor = 0xFFD700;
+                particleCount = 8;
+                break;
+              case 'hardwood':
+                particleColor = 0x8B4513;
+                particleCount = 6;
+                break;
+              case 'error':
+                particleColor = 0xFF0000;
+                particleCount = 10;
+                break;
+            }
+            
+            // Simple particle effect
+            for (let i = 0; i < particleCount; i++) {
+              const particle = this.add.rectangle(x, y, 4, 4, particleColor);
+              this.tweens.add({
+                targets: particle,
+                x: x + Phaser.Math.Between(-30, 30),
+                y: y + Phaser.Math.Between(-20, 20),
+                alpha: 0,
+                duration: 500,
+                ease: 'Power2',
+                onComplete: () => particle.destroy()
+              });
+            }
+            
+            // Special effect for error logs
+            if (logType === 'error') {
+              const errorText = this.add.text(x, y - 30, 'ERROR!', {
+                fontSize: '16px',
+                color: '#ff0000',
+                fontFamily: 'monospace'
+              }).setOrigin(0.5);
+              
+              this.tweens.add({
+                targets: errorText,
+                y: y - 60,
+                alpha: 0,
+                duration: 1000,
+                ease: 'Power2',
+                onComplete: () => errorText.destroy()
+              });
+            }
+          }
+          
+          updateUI() {
+            this.scoreText.setText(`SCORE: ${this.score.toLocaleString()}`);
+            this.comboText.setText(`COMBO: ${this.combo}`);
+            this.levelText.setText(`LEVEL: ${this.level}`);
+            
+            const gameTimeSeconds = Math.floor((this.time.now - this.gameStartTime) / 1000);
+            const minutes = Math.floor(gameTimeSeconds / 60);
+            const seconds = gameTimeSeconds % 60;
+            this.timeText.setText(`TIME: ${minutes}:${seconds.toString().padStart(2, '0')}`);
+          }
+          
+          update(time: number, delta: number) {
+            this.gameTime += delta;
+            
+            // Level progression every 30 seconds
+            const newLevel = Math.floor(this.gameTime / 30000) + 1;
+            if (newLevel > this.level) {
+              this.level = newLevel;
+              this.logSpawnRate = Math.max(500, 2000 - (this.level * 100)); // Increase spawn rate
+            }
+            
+            // Spawn logs
+            this.logSpawnTimer += delta;
+            if (this.logSpawnTimer > this.logSpawnRate) {
+              this.spawnLog();
+              this.logSpawnTimer = 0;
+            }
+            
+            // Update log positions and remove fallen logs
+            for (let i = this.logs.length - 1; i >= 0; i--) {
+              const log = this.logs[i] as any;
+              log.y += (log.fallSpeed * delta) / 1000;
+              
+              // Update error symbol position
+              if (log.errorSymbol) {
+                log.errorSymbol.y = log.y;
+              }
+              
+              // Remove logs that fell off screen (miss)
+              if (log.y > this.cameras.main.height + 50) {
+                const previousCombo = this.combo;
+                this.combo = 0; // Reset combo on miss
+                setCurrentCombo(0);
+                
+                // Sentry logging for missed log
+                Sentry.addBreadcrumb({
+                  message: 'Log fell off screen',
+                  category: 'game',
+                  data: {
+                    logType: log.logType,
+                    lostCombo: previousCombo,
+                    logPoints: log.points,
+                    fallSpeed: log.fallSpeed
+                  },
+                  level: 'info'
+                });
+                
+                // Clean up error symbol
+                if (log.errorSymbol) {
+                  log.errorSymbol.destroy();
+                }
+                
+                log.destroy();
+                this.logs.splice(i, 1);
+                this.updateUI();
+              }
             }
           }
         };
@@ -177,7 +525,7 @@ export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
           parent: container,
           width: containerWidth,
           height: containerHeight,
-          backgroundColor: '#2d5016',
+          backgroundColor: '#1a3d0a',
           scene: GameScene,
           scale: {
             mode: Phaser.Scale.FIT,
@@ -186,6 +534,13 @@ export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
           dom: {
             createContainer: true
           },
+          physics: {
+            default: 'arcade',
+            arcade: {
+              gravity: { y: 0, x: 0 },
+              debug: false
+            }
+          }
         };
         
         console.log('Creating Phaser game with config:', config);
@@ -219,10 +574,28 @@ export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
   };
   
   const handleEndGame = async () => {
-    console.log('Ending game...');
+    console.log('Ending game with score:', currentScore);
+    
+    // Save game results to Convex
+    try {
+      await endGame({
+        score: currentScore,
+        maxCombo: currentCombo,
+        level: Math.floor((Date.now() / 1000) / 30) + 1 // Approximate level
+      });
+      
+      if (onGameOver) {
+        onGameOver(currentScore);
+      }
+    } catch (error) {
+      console.error('Failed to save game:', error);
+    }
+    
     cleanupGame();
     setIsPlaying(false);
     setShowInstructions(true);
+    setCurrentScore(0);
+    setCurrentCombo(0);
   };
   
   return (
@@ -241,16 +614,18 @@ export default function RetroGameCanvas({ playerId }: RetroGameCanvasProps) {
               <div className="text-yellow-400 font-bold mb-2">🎮 Controls</div>
               <div className="text-green-200 text-sm">
                 • Move mouse to aim axe<br/>
-                • Click to chop logs<br/>
-                • Don&apos;t miss or lose combo!
+                • Click directly on logs to chop<br/>
+                • Build combos with consecutive hits<br/>
+                • Missing resets your combo!
               </div>
             </div>
             <div className="bg-green-800/50 p-4 rounded border-2 border-green-600">
               <div className="text-yellow-400 font-bold mb-2">🌲 Log Types</div>
               <div className="text-green-200 text-sm">
-                • Brown: Normal (50 pts)<br/>
-                • Dark: Hardwood (100 pts)<br/>
-                • Gold: Special (500 pts)
+                • Brown: Normal (2 hits, 50 pts)<br/>
+                • Dark: Hardwood (3 hits, 100 pts)<br/>
+                • Gold: Bonus (1 hit, 500 pts)<br/>
+                • <span className="text-red-400">Red: Error (-100 pts!) ⚠️</span>
               </div>
             </div>
           </div>

@@ -13,7 +13,7 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<'game' | 'leaderboard' | 'achievements'>('game');
 
   
-  const { player, createOrUpdatePlayer } = useConvexGame(playerId);
+  const { player, updatePlayerName } = useConvexGame(playerId);
   const [playerName, setPlayerName] = useState('');
   
   useEffect(() => {
@@ -21,17 +21,28 @@ export default function Home() {
   }, [playerId]);
   
   useEffect(() => {
-    if (player && player.name !== playerName) {
+    if (player && !playerName) {
+      // Only set initial name if playerName is empty
       setPlayerName(player.name);
     }
-  }, [player, playerName]);
+  }, [player]); // Removed playerName from dependencies to prevent overwriting user input
   
   const handleUpdateName = useCallback(async () => {
     if (playerName.trim()) {
-      await createOrUpdatePlayer({ userId: playerId, name: playerName.trim() });
-      Sentry.logger.info("Player name updated", { playerId, newName: playerName.trim() });
+      try {
+        Sentry.logger.info("Attempting to update player name", { 
+          playerId, 
+          currentName: player?.name,
+          newName: playerName.trim() 
+        });
+        await updatePlayerName(playerName.trim());
+        Sentry.logger.info("Player name updated successfully", { playerId, newName: playerName.trim() });
+      } catch (error) {
+        Sentry.captureException(error);
+        console.error('Failed to update player name:', error);
+      }
     }
-  }, [playerName, createOrUpdatePlayer, playerId]);
+  }, [playerName, updatePlayerName, playerId, player?.name]);
   
   const tabButtons = useMemo(() => [
     { id: 'game' as const, label: 'GAME', icon: '🎮' },

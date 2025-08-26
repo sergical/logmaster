@@ -12,6 +12,11 @@ export function useConvexGame(userId: string) {
   
   // Mutations
   const createOrUpdatePlayer = useMutation(api.players.createOrUpdatePlayer);
+  
+  const updatePlayerName = useCallback(async (name: string) => {
+    if (!userId) return;
+    return await createOrUpdatePlayer({ userId, name });
+  }, [userId, createOrUpdatePlayer]);
   const updatePlayerStats = useMutation(api.players.updatePlayerStats);
   const unlockAchievement = useMutation(api.players.unlockAchievement);
   const startGameSession = useMutation(api.gameSessions.startGameSession);
@@ -95,17 +100,18 @@ export function useConvexGame(userId: string) {
   
   const endGame = useCallback(async (stats: {
     score: number;
-    chops: number;
-    combo: number;
-    playTime: number;
-    fastestChop?: number;
+    maxCombo: number;
+    level: number;
   }) => {
     if (!sessionId || !playerId) return;
     
     await endGameSession({ sessionId });
     await updatePlayerStats({
       playerId,
-      ...stats,
+      score: stats.score,
+      chops: 0, // We'll add chop counting later
+      combo: stats.maxCombo,
+      playTime: 0, // We'll add play time tracking later  
     });
     
     setSessionId(null);
@@ -165,6 +171,7 @@ export function useConvexGame(userId: string) {
     endGame,
     checkAndUnlockAchievements,
     createOrUpdatePlayer,
+    updatePlayerName,
   }), [
     player,
     playerId,
@@ -177,5 +184,6 @@ export function useConvexGame(userId: string) {
     endGame,
     checkAndUnlockAchievements,
     createOrUpdatePlayer,
+    updatePlayerName,
   ]);
 }
