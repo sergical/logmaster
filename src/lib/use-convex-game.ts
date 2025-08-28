@@ -42,24 +42,19 @@ export function useConvexGame(userId: string) {
   
   const allAchievements = useQuery(api.achievements.getAllAchievements);
   
-  // Initialize player only once
-  useEffect(() => {
+  // Manual initialization - no auto-init with default name
+  const initializePlayer = useCallback(async (name: string) => {
     if (!userId || isInitialized) return;
     
-    async function init() {
-      try {
-        const id = await createOrUpdatePlayer({ 
-          userId, 
-          name: `Player_${userId.slice(0, 4)}` 
-        });
-        setPlayerId(id);
-        setIsInitialized(true);
-      } catch (error) {
-        console.error("Failed to initialize player:", error);
-      }
+    try {
+      const id = await createOrUpdatePlayer({ userId, name });
+      setPlayerId(id);
+      setIsInitialized(true);
+      return id;
+    } catch (error) {
+      console.error("Failed to initialize player:", error);
+      throw error;
     }
-    
-    init();
   }, [userId, isInitialized, createOrUpdatePlayer]);
   
   // Set playerId when player data is available
@@ -102,6 +97,9 @@ export function useConvexGame(userId: string) {
     score: number;
     maxCombo: number;
     level: number;
+    chops?: number;
+    playTime?: number;
+    fastestChop?: number;
   }) => {
     if (!sessionId || !playerId) return;
     
@@ -109,9 +107,10 @@ export function useConvexGame(userId: string) {
     await updatePlayerStats({
       playerId,
       score: stats.score,
-      chops: 0, // We'll add chop counting later
+      chops: stats.chops || 0,
       combo: stats.maxCombo,
-      playTime: 0, // We'll add play time tracking later  
+      playTime: stats.playTime || 0,
+      fastestChop: stats.fastestChop
     });
     
     setSessionId(null);
@@ -148,6 +147,10 @@ export function useConvexGame(userId: string) {
           shouldUnlock = stats.reactionTime !== undefined && 
                         stats.reactionTime <= achievement.requirement.value;
           break;
+        case "total_chops":
+          // This should check total chops across all games, needs player stats
+          shouldUnlock = (player?.totalChops || 0) + (stats.chops || 0) >= achievement.requirement.value;
+          break;
       }
       
       if (shouldUnlock) {
@@ -166,11 +169,12 @@ export function useConvexGame(userId: string) {
     activeSession,
     leaderboard,
     allAchievements,
+    isInitialized,
+    initializePlayer,
     startGame,
     updateGame,
     endGame,
     checkAndUnlockAchievements,
-    createOrUpdatePlayer,
     updatePlayerName,
   }), [
     player,
@@ -179,11 +183,12 @@ export function useConvexGame(userId: string) {
     activeSession,
     leaderboard,
     allAchievements,
+    isInitialized,
+    initializePlayer,
     startGame,
     updateGame,
     endGame,
     checkAndUnlockAchievements,
-    createOrUpdatePlayer,
     updatePlayerName,
   ]);
 }

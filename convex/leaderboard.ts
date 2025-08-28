@@ -17,6 +17,7 @@ export const getTopScores = query({
         .withIndex("by_game_mode", (q) => 
           q.eq("gameMode", args.gameMode!)
         )
+        .filter((q) => q.gt(q.field("score"), 0))
         .order("desc")
         .take(limit);
     } else if (args.timeFrame === "weekly") {
@@ -26,6 +27,7 @@ export const getTopScores = query({
         .withIndex("by_week", (q) => 
           q.eq("week", currentWeek)
         )
+        .filter((q) => q.gt(q.field("score"), 0))
         .order("desc")
         .take(limit);
     } else if (args.timeFrame === "monthly") {
@@ -36,12 +38,14 @@ export const getTopScores = query({
         .withIndex("by_month", (q) => 
           q.eq("month", currentMonth)
         )
+        .filter((q) => q.gt(q.field("score"), 0))
         .order("desc")
         .take(limit);
     } else {
       scores = await ctx.db
         .query("leaderboard")
         .withIndex("by_score")
+        .filter((q) => q.gt(q.field("score"), 0))
         .order("desc")
         .take(limit);
     }

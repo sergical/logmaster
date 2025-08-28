@@ -188,7 +188,7 @@ class GameManager {
 
     Sentry.logger.debug("Initial achievements created", {
       achievementsCount: achievements.length,
-      achievementTypes: achievements.map(a => a.id)
+      achievementTypesList: achievements.map(a => a.id).join(',')
     });
 
     return achievements;
@@ -488,9 +488,11 @@ class GameManager {
     if (!this.gameState) return;
 
     const beforeCount = this.gameState.logs.length;
-    this.gameState.logs = this.gameState.logs.filter(log => 
-      !log.chopped || (Date.now() - (log as { choppedAt?: number }).choppedAt || 0) < 5000
-    );
+    this.gameState.logs = this.gameState.logs.filter(log => {
+      if (!log.chopped) return true;
+      const choppedAt = (log as { choppedAt?: number }).choppedAt;
+      return choppedAt ? (Date.now() - choppedAt) < 5000 : false;
+    });
     const afterCount = this.gameState.logs.length;
 
     if (beforeCount !== afterCount) {

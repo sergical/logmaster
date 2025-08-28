@@ -12,6 +12,16 @@ export const createOrUpdatePlayer = mutation({
       .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
       .first();
 
+    // Check if name is taken by another user
+    const nameConflict = await ctx.db
+      .query("players")
+      .filter((q) => q.eq(q.field("name"), args.name))
+      .first();
+    
+    if (nameConflict && nameConflict.userId !== args.userId) {
+      throw new Error(`Name "${args.name}" is already taken`);
+    }
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         name: args.name,
@@ -72,7 +82,7 @@ export const updatePlayerStats = mutation({
         gamesPlayed: player.stats.gamesPlayed + 1,
         totalPlayTime: player.stats.totalPlayTime + args.playTime,
         longestCombo: Math.max(player.stats.longestCombo, args.combo),
-        fastestChop: args.fastestChop && args.fastestChop < player.stats.fastestChop 
+        fastestChop: args.fastestChop && (player.stats.fastestChop === 0 || args.fastestChop < player.stats.fastestChop)
           ? args.fastestChop 
           : player.stats.fastestChop,
       },
@@ -83,6 +93,19 @@ export const updatePlayerStats = mutation({
     }
 
     await ctx.db.patch(args.playerId, updates);
+  },
+});
+
+export const checkNameAvailability = query({
+  args: { name: v.string(), excludeUserId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const existingPlayer = await ctx.db
+      .query("players")
+      .filter((q) => q.eq(q.field("name"), args.name))
+      .first();
+    
+    // If no existing player or it's the same user, name is available
+    return !existingPlayer || existingPlayer.userId === args.excludeUserId;
   },
 });
 
